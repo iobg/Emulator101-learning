@@ -5,7 +5,7 @@
 int Disassemble8080Op(unsigned char *codebuffer, int pc){
 	unsigned char *code = &codebuffer[pc];
 	int opbytes = 1; 
-	// printf("%04x ", pc);
+	printf("%04x ", pc);
 	switch (*code)
 	{
 
@@ -380,7 +380,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc){
 int main(void){
 
 //open file, to pointer of fp
-FILE *fp = fopen("./SI-rom/invaders.h", "r");
+FILE *fp = fopen("./SI-rom/invaders", "r");
 
 	if(fp == NULL){
 		printf("file could not be opened");
