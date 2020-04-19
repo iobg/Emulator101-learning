@@ -40,7 +40,7 @@
     exit(1);    
    }
 
-   void genericADD(State8080* state, uint16_t answer)
+   void setFlagsArith(State8080* state, uint16_t answer)
    {
         //Check out 0x80 for an elaborated ADD
         state->cc.z = ((answer & 0xFF) == 0);
@@ -55,6 +55,7 @@
     switch(*opcode){
         case 0x00: break;
         case 0x01:
+            //LXIt
             state->c = opcode[1];
             state->b = opcode[2];
             state->pc +=2;
@@ -65,7 +66,7 @@
             // Zero flag: if the result is zero,    
             // set the flag to zero    
             // else clear the flag   
-            //the & 0xFF masks to the least significant bit
+            //the & 0xFF masks to keep only the last 8 bits
             if((answer & 0xFF) == 0)
                 state->cc.z = 1;
             else 
@@ -87,26 +88,71 @@
             state->cc.p = Parity( answer & 0xff);    
             state->a = answer & 0xff;  
         }
+        break;
         case 0x81: {
             //ADD C
             uint16_t answer = (uint16_t) state->a + (uint16_t) state->c;
-            genericADD(state, answer);
+            setFlagsArith(state, answer);
         }
+        break;
+        case 0x86: {
+            //ADD M
+            //adds byte pointed to by HL register pair
+            uint16_t offset = (state->h<<8) | (state->l);    
+            uint16_t answer = (uint16_t) state->a + state->memory[offset];
+            setFlagsArith(state, answer);
+
+        }
+        break;
         case 0xC6: {
             //ADI byte
             //adds the next byte to A
             uint16_t answer = (uint16_t) state->a + (uint16_t) opcode[1];
-            genericADD(state, answer)
+            setFlagsArith(state, answer);
         }
-        case 0x86: {
-            //ADD M
-            //adds byte pointed to by HL register pair
-            uint16_t offset = (state->h<<8) | (state->1);
-            uint16_t answer = (uint16_t) state->a + state=>memory[offset];
-            genericADD(state, answer);
-            
+        break;
+        case 0xc2: 
+            //JNZ 
+            if(0 == state->cc.z)
+                //set pc to the address in the next opcode
+                state->pc = (opcode[2] << 8) | opcode[1];
+            else 
+                state->pc +=  2;
+        break;
+        case 0xc3: 
+            state->pc = (opcode[2] << 8 ) | opcode[1];
+        break;
 
+        case 0xcd: {
+            //CALL retrives memory address pushes it onto stack, and then jumps to it
+            uint16_t ret = state-> pc +2;
+            state->memory[state->sp-1] = (ret >> 8) & 0xFF;
+            state->memory[state->sp-2] = (ret & 0xFF);
+            state->sp = state-> sp-2;
+            state->pc = (opcode[2] << 8) | opcode[1];
         }
+        break;
+
+        case 0xc9: 
+            //RET gets address off of the stack and stores it to PC
+            state-> pc = state->memory[state->sp] | (state->memory[state->sp+1] << 8);
+        break;
+        case 0x2F:
+            //CMA aka NOT
+            //reverses bits
+            state->a = ~state->a;
+        break;
+        case 0xe6: {
+            //ANI
+            uint8_t x = state->a & opcode[1];
+            state->cc.z = (x == 0);    
+            state->cc.s = (0x80 == (x & 0x80));    
+            state->cc.p = Parity(x, 8);    
+            state->cc.cy = 0;           //Data book says ANI clears CY    
+            state->a = x; 
+            state->pc++;
+        }
+        break;
 
 
         default: UnimplementedInstruction(state); break;
