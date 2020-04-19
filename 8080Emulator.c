@@ -52,6 +52,10 @@
    int Emulate8080Op(State8080* state){
     unsigned char *opcode = &state->memory[state->pc];
 
+    //notes because I'm dumb
+    //0x80 is 10000000 in binary, we can use this to figure out the sign
+    //0xFF is 11111111 in binary, we can use this to mask any bits higher than 8
+
     switch(*opcode){
         case 0x00: break;
         case 0x01:
@@ -150,6 +154,35 @@
             state->cc.p = Parity(x, 8);    
             state->cc.cy = 0;           //Data book says ANI clears CY    
             state->a = x; 
+            state->pc++;
+        }
+        break;
+        //bit rotating instructions (can be used for multiplication and division)
+        case 0x0F: {
+            //RRC
+            uint8_t x = state->a;
+            state->a = ((x&1) << 7) | (x >> 1);
+            state-> cc.cy = (1 == (x&1));
+        }
+        break;
+
+        case 0x1F: {
+            //RAR
+            uint8_t x = state->a;
+            state->a = ((x&state->cc.cy) << 7) | (x >> 1);
+            state-> cc.cy = (1 == (x&1));      
+        }
+        break;
+
+        case 0xfe: {
+            //CPI
+            //Checks for equality by subtracting and checking for 0
+            uint8_t x = state->a - opcode[1];
+            state->cc.z = (x == 0);
+            state->cc.s = (0x80 == (x & 0x80))
+            state->cc.p = Parity(x,8);
+            //if a is less than opcode we need to set the carry flag
+            state->cc.cy = (state->a < opcode[1])
             state->pc++;
         }
         break;
