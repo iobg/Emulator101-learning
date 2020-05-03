@@ -82,7 +82,7 @@ int parity(int x, int size)
             state->c = opcode[1];
             state->b = opcode[2];
             state->pc +=2;
-            break;
+        break;
         case 0x05:{
             //DCR B
             uint8_t result = state->b -1;
@@ -91,22 +91,38 @@ int parity(int x, int size)
             state-> cc.p = parity(result, 8 );
             state->b = result;
         }
-            break;
+        break;
         case 0x06:
             //MVI B
             state-> b = opcode[1];
             state-> pc++;
-            break;
+        break;
+        case 0x0e:
+            //MVI C
+            state-> c = opcode[1];
+            state-> pc++;
+        break;
         case 0x11:
             //LXI D
             state->e = opcode[1];
             state->d = opcode[2];
             state->pc += 2;
-            break;
+        break;
         case 0x13:
             //INX D
             state->d += ((++state->e) == 0)? 0:1;
-            break;
+        break;
+        case 0x19:{
+            //HL is used as an accumulator for these big boy additions
+            //DAD D
+            uint32_t hl = (state->h << 8) | state-> l;
+            uint32_t de = (state->d << 8) | state-> e;
+            uint32_t result = hl + de;
+            state->h = (result & 0xff00) >> 8;
+            state->l = result & 0xff;
+            state->cc.cy = ((result & 0xffff0000) != 0);
+        }
+        break;
         case 0x1a:{
             //LDAX D
             //sets A to memory location stored in DE
@@ -119,22 +135,48 @@ int parity(int x, int size)
             state->l = opcode[1];
             state->h = opcode[2];
             state->pc += 2;
-            break;
+        break;
         case 0x23:
             //INX H increment l, if that's 0, increment h
             state->h += ((++state->l) == 0)? 0:1;
-            break;
+        break;
+        case 0x26:
+            //MVI H,D8
+            state->h = opcode[1];
+            state->pc++;
+        break;
+        case 0x29:{
+            //DAD H
+            uint32_t hl = (state->h << 8) | state-> l;
+            uint32_t result = hl + hl;
+            state->h = (result & 0xff00) >> 8;
+            state->l = result & 0xff;
+            state->cc.cy = ((result & 0xffff0000) != 0);
+        }
+        break;
+        case 0x2F:
+            //CMA aka NOT
+            //reverses bits
+            state->a = ~state->a;
+        break;
         case 0x31:
             //LXI SP
             //Chars are 8 bit (opcode[2] << 8) | opcode[1]; so this little tidbit combines both into a 16 bit space to use as one value (I think lol)
             state->sp = (opcode[2] << 8 | opcode[1]);
             state->pc += 2;
-            break;
+        break;
         case 0x32:{
             //STA adr defined in next two opcodes
             uint16_t offset = (opcode[2] << 8) | opcode[1];
             state->memory[offset] = state->a;
             state->pc+=2;
+        }
+        break;
+        case 0x36:{
+            // MVI M
+            uint16_t offset = (state->h << 8) | state->l;
+            state->memory[offset] = opcode[1];
+            state->pc ++;
         }
         break;
         case 0x5e:{
@@ -143,12 +185,20 @@ int parity(int x, int size)
             state->e = state->memory[offset];
         }
         break;
+        case 0x6f:
+            //MOV L,A
+            state->l = state->a;
+        break;
         case 0x77:{
             //MOV M,A
             //sets memory location defined in M (HL) to the value stored in A 
             uint16_t offset = (state-> h << 8) | state->l;
             state->memory[offset] = state->a;
         }
+        break;
+        case 0x7c:
+            //MOV A,H
+            state->a = state->h;
         break;
         case 0x7e:{
             //MOV A,M
@@ -212,7 +262,7 @@ int parity(int x, int size)
         case 0xc3: 
             //JMP to memory address
             state->pc = (opcode[2] << 8 ) | opcode[1];
-            break;
+        break;
         case 0xc6: {
             //ADI byte
             //adds the next byte to A
@@ -233,10 +283,17 @@ int parity(int x, int size)
             //RET gets address off of the stack and stores it to PC
             state-> pc = state->memory[state->sp] | (state->memory[state->sp+1] << 8);
         break;
-        case 0x2F:
-            //CMA aka NOT
-            //reverses bits
-            state->a = ~state->a;
+        case 0xd5:
+            //PUSH D
+            state->memory[state->sp-1] = state->d;
+            state->memory[state->sp-2] = state->e;
+            state->sp = state->sp-2;
+        break;
+        case 0xe5:
+            //PUSH H
+            state->memory[state->sp-1] = state->h;
+            state->memory[state->sp-2] = state->l;
+            state->sp = state->sp-2;
         break;
         case 0xe6: {
             //ANI
@@ -257,7 +314,6 @@ int parity(int x, int size)
             state-> cc.cy = (1 == (x&1));
         }
         break;
-
         case 0x1F: {
             //RAR
             uint8_t x = state->a;
@@ -265,7 +321,6 @@ int parity(int x, int size)
             state-> cc.cy = (1 == (x&1));      
         }
         break;
-
         case 0xfe: {
             //CPI
             //Checks for equality by subtracting and checking for 0
@@ -303,11 +358,11 @@ int parity(int x, int size)
                 state->cc.ac = (0x10 == (psw & 0x10));    
                 state->sp += 2;    
             }    
-            break;    
+        break;    
         case 0xf5:                      //PUSH PSW    
             {    
             state->memory[state->sp-1] = state->a;    
-            uint8_t psw = (state->cc.z |    
+            uint8_t psw = ( state->cc.z |    
                             state->cc.s << 1 |    
                             state->cc.p << 2 |    
                             state->cc.cy << 3 |    
@@ -315,7 +370,7 @@ int parity(int x, int size)
             state->memory[state->sp-2] = psw;    
             state->sp = state->sp - 2;    
             }    
-            break;    
+        break;    
         default: {
             UnimplementedInstruction(state); 
             status = 1;
