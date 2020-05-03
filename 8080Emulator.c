@@ -69,14 +69,14 @@ int parity(int x, int size)
    {
     unsigned char *opcode = &state->memory[state->pc];
     int status = 0;
-
     state->pc+=1;
+    printf("%04x ", *opcode);
     //notes because I'm dumb
     //0x80 is 10000000 in binary, we can use this to figure out the sign
     //0xFF is 11111111 in binary, we can use this to mask any bits higher than 8
     switch(*opcode)
     {
-        case 0x00: printf("NOP"); break;
+        case 0x00: break;
         case 0x01:
             //LXI B
             state->c = opcode[1];
@@ -93,12 +93,32 @@ int parity(int x, int size)
         }
         break;
         case 0x06:
-            //MVI B
+            //MVI B,D8
             state-> b = opcode[1];
             state-> pc++;
         break;
+        case 0x09:{
+            //HL is used as an accumulator for these big boy additions
+            //DAD B
+            uint32_t hl = (state->h << 8) | state-> l;
+            uint32_t bc = (state->b << 8) | state-> c;
+            uint32_t result = hl + bc;
+            state->h = (result & 0xff00) >> 8;
+            state->l = result & 0xff;
+            state->cc.cy = ((result & 0xffff0000) != 0);
+        }
+        break;
+        case 0x0d:{                         
+            //DCR    C    
+            uint8_t result = state->c - 1;
+            state->cc.z = (result == 0);
+            state->cc.s = (0x80 == (result & 0x80));
+            state->cc.p = parity(result, 8);
+            state->c = result;
+            }
+        break;
         case 0x0e:
-            //MVI C
+            //MVI C,D8
             state-> c = opcode[1];
             state-> pc++;
         break;
@@ -110,7 +130,7 @@ int parity(int x, int size)
         break;
         case 0x13:
             //INX D
-            state->d += ((++state->e) == 0)? 0:1;
+            state->d += ((++state->e) == 0)? 1:0;
         break;
         case 0x19:{
             //HL is used as an accumulator for these big boy additions
@@ -138,7 +158,7 @@ int parity(int x, int size)
         break;
         case 0x23:
             //INX H increment l, if that's 0, increment h
-            state->h += ((++state->l) == 0)? 0:1;
+            state->h += ((++state->l) == 0)? 1:0;
         break;
         case 0x26:
             //MVI H,D8
@@ -162,7 +182,7 @@ int parity(int x, int size)
         case 0x31:
             //LXI SP
             //Chars are 8 bit (opcode[2] << 8) | opcode[1]; so this little tidbit combines both into a 16 bit space to use as one value (I think lol)
-            state->sp = (opcode[2] << 8 | opcode[1]);
+            state->sp = (opcode[2] << 8) | opcode[1];
             state->pc += 2;
         break;
         case 0x32:{
@@ -172,17 +192,36 @@ int parity(int x, int size)
             state->pc+=2;
         }
         break;
+        case 0x3a:{
+            //LDA
+            uint16_t offset = (opcode[1]<<8) | (opcode[2]);
+            state->a = state->memory[offset];
+            state->pc+=2;
+            }
+        break;
         case 0x36:{
-            // MVI M
+            // MVI M, D8
             uint16_t offset = (state->h << 8) | state->l;
             state->memory[offset] = opcode[1];
             state->pc ++;
+        }
+        break;
+        case 0x56:{
+            //MOV D,M
+            uint16_t offset = (state-> h << 8) | (state-> l);
+            state-> d = state->memory[offset];
         }
         break;
         case 0x5e:{
             //MOV E,M
             uint16_t offset = (state-> h << 8) | (state->l);
             state->e = state->memory[offset];
+        }
+        break;
+        case 0x66:{
+            //MOV H,M
+            uint16_t offset = (state-> h << 8) | (state-> l);
+            state-> h = state->memory[offset];
         }
         break;
         case 0x6f:
@@ -195,6 +234,14 @@ int parity(int x, int size)
             uint16_t offset = (state-> h << 8) | state->l;
             state->memory[offset] = state->a;
         }
+        break;
+        case 0x7a:
+            //MOV A,D
+            state->a = state->d;
+        break;
+        case 0x7b:
+            //MOV A,E
+            state->a = state->e;
         break;
         case 0x7c:
             //MOV A,H
@@ -282,6 +329,19 @@ int parity(int x, int size)
         case 0xc9: 
             //RET gets address off of the stack and stores it to PC
             state-> pc = state->memory[state->sp] | (state->memory[state->sp+1] << 8);
+            state->sp += 2;
+        break;
+        case 0xd1:
+            //POP D
+            state-> e = state->memory[state->sp];
+            state-> d = state->memory[state->sp+1];
+            state-> sp +=2;
+        break;
+        case 0xd3:
+            //OUT
+            //TODO
+            state->pc++;
+            break;
         break;
         case 0xd5:
             //PUSH D
@@ -321,6 +381,22 @@ int parity(int x, int size)
             state-> cc.cy = (1 == (x&1));      
         }
         break;
+        case 0xe1:
+            //POP H
+            state-> h = state->memory[state->sp];
+            state-> l = state->memory[state->sp+1];
+            state-> sp +=2;
+        break;
+        case 0xeb:{
+            //XCHG swaps HL and DE
+            uint8_t temp1 = state->h;
+            uint8_t temp2 = state->l;
+            state->h = state->d;
+            state->d = temp1;
+            state->l = state->e;
+            state->e = temp2;
+        }
+        break;
         case 0xfe: {
             //CPI
             //Checks for equality by subtracting and checking for 0
@@ -347,16 +423,17 @@ int parity(int x, int size)
                 state->sp = state->sp - 2;
             }
         break;
-        case 0xf1:                      //POP PSW    PSW is a special register made of acumulator and register flags
+        case 0xf1:                      
             {    
-                state->a = state->memory[state->sp+1];    
-                uint8_t psw = state->memory[state->sp];    
-                state->cc.z  = (0x01 == (psw & 0x01));    
-                state->cc.s  = (0x02 == (psw & 0x02));    
-                state->cc.p  = (0x04 == (psw & 0x04));    
-                state->cc.cy = (0x05 == (psw & 0x08));    
-                state->cc.ac = (0x10 == (psw & 0x10));    
-                state->sp += 2;    
+                //POP PSW    PSW is a special register made of acumulator and register flags
+                state->a = state->memory[state->sp+1];
+                uint8_t psw = state->memory[state->sp];
+                state->cc.z  = (0x01 == (psw & 0x01));
+                state->cc.s  = (0x02 == (psw & 0x02));
+                state->cc.p  = (0x04 == (psw & 0x04));
+                state->cc.cy = (0x05 == (psw & 0x08));
+                state->cc.ac = (0x10 == (psw & 0x10));
+                state->sp += 2;  
             }    
         break;    
         case 0xf5:                      //PUSH PSW    
