@@ -65,6 +65,14 @@ int parity(int x, int size)
         state->cc.p = parity(answer, 8)  ; 
    }
 
+    void LogicFlagsA(State8080 *state)
+    {
+        state->cc.cy = state->cc.ac = 0;
+        state->cc.z = (state->a == 0);
+        state->cc.s = (0x80 == (state->a & 0x80));
+        state->cc.p = parity(state->a, 8);
+    }
+
    int Emulate8080Op(State8080* state)
    {
     unsigned char *opcode = &state->memory[state->pc];
@@ -187,17 +195,10 @@ int parity(int x, int size)
         break;
         case 0x32:{
             //STA adr defined in next two opcodes
-            uint16_t offset = (opcode[2] << 8) | opcode[1];
+            uint16_t offset = (opcode[2] << 8) | (opcode[1]);
             state->memory[offset] = state->a;
             state->pc+=2;
         }
-        break;
-        case 0x3a:{
-            //LDA
-            uint16_t offset = (opcode[1]<<8) | (opcode[2]);
-            state->a = state->memory[offset];
-            state->pc+=2;
-            }
         break;
         case 0x36:{
             // MVI M, D8
@@ -205,6 +206,18 @@ int parity(int x, int size)
             state->memory[offset] = opcode[1];
             state->pc ++;
         }
+        break;
+        case 0x3a:{
+            //LDA
+            uint16_t offset = (opcode[2]<<8) | (opcode[1]);
+            state->a = state->memory[offset];
+            state->pc+=2;
+            }
+        break;
+        case 0x3e:
+            //MVI A,D8
+            state-> a = opcode[1];
+            state-> pc++;
         break;
         case 0x56:{
             //MOV D,M
@@ -294,9 +307,18 @@ int parity(int x, int size)
             uint16_t offset = (state->h<<8) | (state->l);    
             uint16_t answer = (uint16_t) state->a + state->memory[offset];
             setFlagsArith(state, answer);
-
         }
         break;
+        case 0xa7: 
+            //ANA A
+            state->a = state->a & state->a; 
+            LogicFlagsA(state);  
+            break; 
+        case 0xaf: 
+            //XRA A
+            state->a = state->a ^ state->a; 
+            LogicFlagsA(state);  
+            break;
         case 0xc2: {
             //JNZ 
             if(0 == state->cc.z)
@@ -361,7 +383,8 @@ int parity(int x, int size)
             state->cc.z = (x == 0);    
             state->cc.s = (0x80 == (x & 0x80));    
             state->cc.p = parity(x, 8);    
-            state->cc.cy = 0;           //Data book says ANI clears CY    
+            //ANI clears CY per spec
+            state->cc.cy = 0;        
             state->a = x; 
             state->pc++;
         }
@@ -383,8 +406,8 @@ int parity(int x, int size)
         break;
         case 0xe1:
             //POP H
-            state-> h = state->memory[state->sp];
-            state-> l = state->memory[state->sp+1];
+            state-> l = state->memory[state->sp];
+            state-> h = state->memory[state->sp+1];
             state-> sp +=2;
         break;
         case 0xeb:{
@@ -396,6 +419,10 @@ int parity(int x, int size)
             state->l = state->e;
             state->e = temp2;
         }
+        break;
+        case 0xfb:
+            //EI
+            state->int_enable = 1;
         break;
         case 0xfe: {
             //CPI
