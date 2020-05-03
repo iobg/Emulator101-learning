@@ -50,7 +50,9 @@ int parity(int x, int size)
    void UnimplementedInstruction(State8080* state)    
    {    
     state->pc-=1;
+    unsigned char *opcode = &state->memory[state->pc];
     printf ("Error: Unimplemented instruction\n");    
+    printf("%04x", *opcode);
     exit(1);    
    }
 
@@ -81,6 +83,79 @@ int parity(int x, int size)
             state->b = opcode[2];
             state->pc +=2;
             break;
+        case 0x05:{
+            //DCR B
+            uint8_t result = state->b -1;
+            state-> cc.z = (result == 0);
+            state-> cc.s = (0x80 == (result & 0x80));
+            state-> cc.p = parity(result, 8 );
+            state->b = result;
+        }
+            break;
+        case 0x06:
+            //MVI B
+            state-> b = opcode[1];
+            state-> pc++;
+            break;
+        case 0x11:
+            //LXI D
+            state->e = opcode[1];
+            state->d = opcode[2];
+            state->pc += 2;
+            break;
+        case 0x13:
+            //INX D
+            state->d += ((++state->e) == 0)? 0:1;
+            break;
+        case 0x1a:{
+            //LDAX D
+            //sets A to memory location stored in DE
+            uint16_t offset = (state->d << 8) | state-> e;
+            state-> a = state->memory[offset];  
+        }
+        break;
+        case 0x21:
+            //LXI H
+            state->l = opcode[1];
+            state->h = opcode[2];
+            state->pc += 2;
+            break;
+        case 0x23:
+            //INX H increment l, if that's 0, increment h
+            state->h += ((++state->l) == 0)? 0:1;
+            break;
+        case 0x31:
+            //LXI SP
+            //Chars are 8 bit (opcode[2] << 8) | opcode[1]; so this little tidbit combines both into a 16 bit space to use as one value (I think lol)
+            state->sp = (opcode[2] << 8 | opcode[1]);
+            state->pc += 2;
+            break;
+        case 0x32:{
+            //STA adr defined in next two opcodes
+            uint16_t offset = (opcode[2] << 8) | opcode[1];
+            state->memory[offset] = state->a;
+            state->pc+=2;
+        }
+        break;
+        case 0x5e:{
+            //MOV E,M
+            uint16_t offset = (state-> h << 8) | (state->l);
+            state->e = state->memory[offset];
+        }
+        break;
+        case 0x77:{
+            //MOV M,A
+            //sets memory location defined in M (HL) to the value stored in A 
+            uint16_t offset = (state-> h << 8) | state->l;
+            state->memory[offset] = state->a;
+        }
+        break;
+        case 0x7e:{
+            //MOV A,M
+            uint16_t offset = (state->h<<8) | (state->l);
+            state->a = state->memory[offset];
+        }
+        break;
         case 0x80: {
             //ADD B
             uint16_t answer = (uint16_t) state->a + (uint16_t) state->b;
@@ -135,6 +210,7 @@ int parity(int x, int size)
         }
         break;
         case 0xc3: 
+            //JMP to memory address
             state->pc = (opcode[2] << 8 ) | opcode[1];
             break;
         case 0xc6: {
@@ -147,8 +223,8 @@ int parity(int x, int size)
         case 0xcd: {
             //CALL retrives memory address pushes it onto stack, and then jumps to it
             uint16_t ret = state-> pc +2;
-            state->memory[state->sp-1] = (ret >> 8) & 0xFF;
-            state->memory[state->sp-2] = (ret & 0xFF);
+            state->memory[state->sp-1] = (ret >> 8) & 0xff;
+            state->memory[state->sp-2] = (ret & 0xff);
             state->sp = state-> sp-2;
             state->pc = (opcode[2] << 8) | opcode[1];
         }
