@@ -17,6 +17,7 @@
     uint8_t    pad:3;    
    } ConditionCodes;
 
+
    typedef struct State8080 {    
     //registers
     uint8_t    a;    
@@ -65,13 +66,14 @@ int parity(int x, int size)
         state->cc.p = parity(answer, 8)  ; 
    }
 
-    void LogicFlagsA(State8080 *state)
+    void LogicFlagsA(State8080* state)
     {
         state->cc.cy = state->cc.ac = 0;
         state->cc.z = (state->a == 0);
         state->cc.s = (0x80 == (state->a & 0x80));
         state->cc.p = parity(state->a, 8);
     }
+
 
    int Emulate8080Op(State8080* state)
    {
@@ -84,6 +86,25 @@ int parity(int x, int size)
     //0xFF is 11111111 in binary, we can use this to mask any bits higher than 8
     switch(*opcode)
     {
+
+        //IN AND OUT FIRST BECAUSE THEY'RE KINDA SPECIAL AND INTERACT WITH HARDWARE
+        case 0xdb:{
+            //IN
+            uint8_t port = opcode[1];
+            // state->a = MachineIN(port);
+            state->pc++;
+        }
+        case 0xd3:{
+            //OUT
+            uint8_t port = opcode[1];
+            // MachineOUT(state, port);
+            printf("OUT");
+            state->pc++;
+        }
+        break;
+
+        //everything else
+        //NOP
         case 0x00: break;
         case 0x01:
             //LXI B
@@ -359,12 +380,6 @@ int parity(int x, int size)
             state-> d = state->memory[state->sp+1];
             state-> sp +=2;
         break;
-        case 0xd3:
-            //OUT
-            //TODO
-            state->pc++;
-            break;
-        break;
         case 0xd5:
             //PUSH D
             state->memory[state->sp-1] = state->d;
@@ -521,10 +536,11 @@ int main (int argc, char**argv)
     ReadFileIntoMemoryAt(state, "SI-rom/invaders.g", 0x800);
     ReadFileIntoMemoryAt(state, "SI-rom/invaders.f", 0x1000);
     ReadFileIntoMemoryAt(state, "SI-rom/invaders.e", 0x1800);
+
     
-    while (done == 0)
+    while (!done)
     {
-        done = Emulate8080Op(state);
+            done = Emulate8080Op(state);
     }
     return 0;
 }
